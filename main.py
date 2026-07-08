@@ -46,6 +46,14 @@ TEST_SCENARIOS = [
     {
         "name": "Test Case 11 (Empty Prompt Check)",
         "request": "   "
+    },
+    {
+        "name": "Test Case 12 (High-Value Refund - Approved Path)",
+        "request": "I want to request a return and refund for order #ORD-HIGH-VAL. The item was damaged and I need a $100 refund."
+    },
+    {
+        "name": "Test Case 13 (High-Value Refund - Rejected Path)",
+        "request": "Please reject this request. I want a refund for order #ORD-HIGH-REJ because it was damaged."
     }
 ]
 
@@ -54,10 +62,52 @@ def run_agentic_triage(request_text: str):
     print(f"Customer Input: \"{request_text}\"")
     print("=" * 80)
     
-    # Run the guarded workflow wrapper
-    res = run_guarded_agent(request_text)
+    import uuid
+    thread_id = str(uuid.uuid4())
+    config = {"configurable": {"thread_id": thread_id}}
     
-    # Output execution results log
+    # Run the guarded workflow wrapper
+    res = run_guarded_agent(request_text, config)
+    
+    # Check if the execution has paused for human manager review
+    while res.get("status") == "interrupted":
+        print("\n" + "=" * 25 + " INTERMEDIATE LEDGER " + "=" * 25)
+        tasks = res.get("tasks", [])
+        print(f"Total tasks planned: {len(tasks)}")
+        for task in tasks:
+            agent_val = task['agent'].value if hasattr(task['agent'], 'value') else str(task['agent'])
+            print(f"Task {task['id']} - Agent: {agent_val} | Status: {task['status']}")
+            print(f"  Instruction: {task['instruction']}")
+            
+        print(f"\n[MANUAL REVIEW REQUIRED]")
+        print(f"Escalation Reason: {res.get('approval_reason')}")
+        
+        # Determine approval decision
+        if "--test" in sys.argv:
+            # Automated verification decision routing
+            if "rej" in request_text.lower() or "reject" in request_text.lower():
+                decision = "n"
+                print("[TEST MODE] Auto-declining human check.")
+            else:
+                decision = "y"
+                print("[TEST MODE] Auto-approving human check.")
+        else:
+            decision = ""
+            while decision not in ["y", "n"]:
+                decision = input("Grant human approval for this refund? (y/n): ").strip().lower()
+                
+        approval_status = "approved" if decision == "y" else "rejected"
+        
+        # Inject decision state directly into the checkpointer thread
+        from graph import app
+        app.update_state(config, {"approval_status": approval_status})
+        
+        print(f"\n--- Resuming workflow with decision: {approval_status.upper()} ---")
+        
+        # Resume the guarded agent
+        res = run_guarded_agent(None, config)
+        
+    # Output final execution results log
     print("\n" + "=" * 30 + " EXECUTION LEDGER " + "=" * 30)
     tasks = res.get("tasks", [])
     print(f"Total tasks planned: {len(tasks)}")
@@ -76,6 +126,7 @@ def run_agentic_triage(request_text: str):
     print("=" * 30 + " FINAL SYNTHESIZED RESPONSE " + "=" * 30)
     print(res.get("final_response", ""))
     print("=" * 80 + "\n")
+
 
 def main():
     print("Welcome to the Agentic Customer Support Triager!")

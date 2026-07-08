@@ -1,4 +1,5 @@
 from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import MemorySaver
 
 from state import AgentState, AgentType
 from nodes import (
@@ -8,6 +9,7 @@ from nodes import (
     refund_node,
     response_synthesizer_node
 )
+from human_approval import human_approval_node
 
 # Dispatcher function: pure Python logic mapping current task index to node name
 def dispatcher(state: AgentState) -> str:
@@ -29,6 +31,12 @@ def dispatcher(state: AgentState) -> str:
     # Default to synthesis when all tasks completed (or plan is empty)
     return "response_synthesizer_node"
 
+# Approval Router: checks if human review is required, else routes back to dispatcher
+def approval_router(state: AgentState) -> str:
+    if state.get("approval_required", False):
+        return "human_approval_node"
+    return dispatcher(state)
+
 # Construct State Graph
 workflow = StateGraph(AgentState)
 
@@ -37,12 +45,13 @@ workflow.add_node("planner_node", planner_node)
 workflow.add_node("billing_node", billing_node)
 workflow.add_node("shipping_node", shipping_node)
 workflow.add_node("refund_node", refund_node)
+workflow.add_node("human_approval_node", human_approval_node)
 workflow.add_node("response_synthesizer_node", response_synthesizer_node)
 
 # Add Start Edge
 workflow.add_edge(START, "planner_node")
 
-# Routing Map for Dispatcher
+# Routing Map for Dispatcher and Router
 routing_map = {
     "billing_node": "billing_node",
     "shipping_node": "shipping_node",
@@ -70,8 +79,22 @@ workflow.add_conditional_edges(
     routing_map
 )
 
+# Refund Node routes through the Approval Router
 workflow.add_conditional_edges(
     "refund_node",
+    approval_router,
+    {
+        "human_approval_node": "human_approval_node",
+        "billing_node": "billing_node",
+        "shipping_node": "shipping_node",
+        "refund_node": "refund_node",
+        "response_synthesizer_node": "response_synthesizer_node"
+    }
+)
+
+# Human Approval Node routes back to dispatcher after decision is recorded
+workflow.add_conditional_edges(
+    "human_approval_node",
     dispatcher,
     routing_map
 )
@@ -79,6 +102,11 @@ workflow.add_conditional_edges(
 # Add End Edge
 workflow.add_edge("response_synthesizer_node", END)
 
-# Compile Graph
-app = workflow.compile()
+# Compile Graph with Checkpoint Memory and Interrupt Before human approval
+memory = MemorySaver()
+app = workflow.compile(
+    checkpointer=memory,
+    interrupt_before=["human_approval_node"]
+)
+
 

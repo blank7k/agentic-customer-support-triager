@@ -90,55 +90,88 @@ class OutputGuardrail:
             processed_text=masked_text
         )
 
-def run_guarded_agent(customer_input: str) -> Dict[str, Any]:
-    """Wraps the LangGraph workflow invocation with input and output guardrails."""
-    # 1. Run Input Guardrail
-    input_guardrail = InputGuardrail()
-    input_result = input_guardrail.validate(customer_input)
-    
-    if not input_result.is_safe:
-        return {
-            "success": False,
-            "error_source": "input_guardrail",
-            "message": input_result.rejection_reason,
-            "final_response": input_result.rejection_reason,
-            "tasks": [],
-            "results": []
-        }
-    
-    # 2. Invoke Core LangGraph
-    # Import app inside the function to avoid circular import issues or premature loading
+def run_guarded_agent(customer_input: Optional[str], config: dict) -> Dict[str, Any]:
+    """Wraps the LangGraph workflow invocation with input and output guardrails, supporting checkpoints."""
     from graph import app
     
-    initial_state = {
-        "customer_request": input_result.processed_text,
-        "tasks": [],
-        "current_task_index": 0,
-        "results": [],
-        "final_response": ""
-    }
-    
-    try:
-        final_state = app.invoke(initial_state)
-    except Exception as e:
-        return {
-            "success": False,
-            "error_source": "graph_execution",
-            "message": f"Graph invocation failed: {str(e)}",
-            "final_response": "An error occurred during backend resolution.",
+    # 1. Run Input Guardrail if this is a new request
+    if customer_input is not None:
+        input_guardrail = InputGuardrail()
+        input_result = input_guardrail.validate(customer_input)
+        
+        if not input_result.is_safe:
+            return {
+                "success": False,
+                "status": "rejected",
+                "error_source": "input_guardrail",
+                "message": input_result.rejection_reason,
+                "final_response": input_result.rejection_reason,
+                "tasks": [],
+                "results": []
+            }
+        
+        initial_state = {
+            "customer_request": input_result.processed_text,
             "tasks": [],
-            "results": []
+            "current_task_index": 0,
+            "results": [],
+            "final_response": "",
+            "approval_required": False,
+            "approval_status": "pending",
+            "approval_reason": None
         }
         
+        try:
+            final_state = app.invoke(initial_state, config)
+        except Exception as e:
+            return {
+                "success": False,
+                "status": "error",
+                "error_source": "graph_execution",
+                "message": f"Graph invocation failed: {str(e)}",
+                "final_response": "An error occurred during backend resolution.",
+                "tasks": [],
+                "results": []
+            }
+    else:
+        # Resuming execution with checkpointer
+        try:
+            final_state = app.invoke(None, config)
+        except Exception as e:
+            return {
+                "success": False,
+                "status": "error",
+                "error_source": "graph_execution",
+                "message": f"Graph resume failed: {str(e)}",
+                "final_response": "An error occurred during backend resolution.",
+                "tasks": [],
+                "results": []
+            }
+
+    # 2. Check if the graph execution is interrupted
+    state_info = app.get_state(config)
+    if state_info.next:
+        # The workflow has paused (interrupted before a node)
+        return {
+            "success": True,
+            "status": "interrupted",
+            "next_node": state_info.next[0],
+            "tasks": final_state.get("tasks", []),
+            "results": final_state.get("results", []),
+            "approval_reason": final_state.get("approval_reason"),
+            "final_response": "Execution suspended pending human manager review."
+        }
+
     final_response = final_state.get("final_response", "")
 
-    # 3. Run Output Guardrail
+    # 3. Run Output Guardrail on completion
     output_guardrail = OutputGuardrail()
     output_result = output_guardrail.validate(final_response)
     
     if not output_result.is_safe:
         return {
             "success": False,
+            "status": "rejected",
             "error_source": "output_guardrail",
             "message": output_result.rejection_reason,
             "final_response": output_result.rejection_reason,
@@ -148,7 +181,9 @@ def run_guarded_agent(customer_input: str) -> Dict[str, Any]:
 
     return {
         "success": True,
+        "status": "completed",
         "final_response": output_result.processed_text,
         "tasks": final_state.get("tasks", []),
         "results": final_state.get("results", [])
     }
+

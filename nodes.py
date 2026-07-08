@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, Any
 
 from retriever import VectorlessRetriever
+from approval_policy import needs_refund_approval
 
 retriever = VectorlessRetriever()
 
@@ -199,23 +200,29 @@ def refund_node(state: AgentState) -> Dict[str, Any]:
     
     response = llm.invoke(prompt)
     
+    # Call approval policy to evaluate escalation triggers
+    approval_required, approval_reason = needs_refund_approval(tool_output)
+    
     # Step 3: Write back result
     result: TaskResult = {
         "task_id": task["id"],
         "agent": AgentType.REFUND,
-        "status": "completed",
+        "status": "pending" if approval_required else "completed",
         "summary": f"Refund status verified. {tool_output['refund_eligibility']}.",
         "detail": response.content
     }
     
     updated_results = list(state.get("results", [])) + [result]
     updated_tasks = list(state["tasks"])
-    updated_tasks[idx]["status"] = "completed"
+    updated_tasks[idx]["status"] = "pending" if approval_required else "completed"
     
     return {
         "results": updated_results,
         "tasks": updated_tasks,
-        "current_task_index": idx + 1
+        "current_task_index": idx + 1,
+        "approval_required": approval_required,
+        "approval_reason": approval_reason,
+        "approval_status": "pending" if approval_required else "approved"
     }
 
 # Response Synthesizer Node

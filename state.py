@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import TypedDict, List, Dict, Any
+from typing import TypedDict, List, Dict, Any, Optional
 
 class AgentType(str, Enum):
     BILLING = "billing"
@@ -25,3 +25,7 @@ class AgentState(TypedDict):
     current_task_index: int      # Queue index pointer managed by the Dispatcher
     results: List[TaskResult]    # Ledger of execution results
     final_response: str          # Final synthesized output response
+    approval_required: bool      # Flag indicating if approval is required
+    approval_status: str         # 'pending', 'approved', or 'rejected'
+    approval_reason: Optional[str] # Context for the approval trigger
+
