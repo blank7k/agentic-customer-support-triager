@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
+from llm_gateway import LLMGateway
 
 # Load .env file
 dotenv_path = os.path.join(os.path.dirname(__file__), ".env")
@@ -13,42 +13,45 @@ if os.getenv("groq_api_key"):
     os.environ["GROQ_API_KEY"] = os.getenv("groq_api_key")
 if os.getenv("TAVILY_API_KEY"):
     os.environ["TAVILY_API_KEY"] = os.getenv("TAVILY_API_KEY")
+if os.getenv("OPENAI_API_KEY"):
+    os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
 
-class NormalizedChatGoogleGenerativeAI(ChatGoogleGenerativeAI):
-    """
-    Custom wrapper to normalize list-based content returned by newer experimental 
-    or preview Gemini models into standard strings for backwards compatibility.
-    """
-    def invoke(self, *args, **kwargs):
-        res = super().invoke(*args, **kwargs)
-        if hasattr(res, "content") and isinstance(res.content, list):
-            text_parts = []
-            for part in res.content:
-                if isinstance(part, dict) and "text" in part:
-                    text_parts.append(part["text"])
-                elif isinstance(part, str):
-                    text_parts.append(part)
-            res.content = "".join(text_parts)
-        return res
+# 1. Define priorities and provider configurations
+PROVIDERS_CONFIG = [
+    {"name": "groq", "model": "groq/llama-3.3-70b-versatile"},
+    {"name": "gemini", "model": "gemini/gemini-3.1-flash-lite"},
+    {"name": "openai", "model": "openai/gpt-4o-mini"}
+]
 
-    def _generate(self, *args, **kwargs):
-        res = super()._generate(*args, **kwargs)
-        for gen in res.generations:
-            if hasattr(gen.message, "content") and isinstance(gen.message.content, list):
-                text_parts = []
-                for part in gen.message.content:
-                    if isinstance(part, dict) and "text" in part:
-                        text_parts.append(part["text"])
-                    elif isinstance(part, str):
-                        text_parts.append(part)
-                gen.message.content = "".join(text_parts)
-        return res
+# 2. Instantiate explicit LLMGateway
+gateway = LLMGateway(PROVIDERS_CONFIG, enable_cache=True)
 
-# Initialize primary model using gemini-3.1-flash-lite
-llm = NormalizedChatGoogleGenerativeAI(
-    model="gemini-3.1-flash-lite",
-    temperature=0.0
-)
+# 3. Create LangChain Adapter Classes to maintain zero code change in nodes
+class LangChainGatewayAdapter:
+    def __init__(self, gateway_instance: LLMGateway):
+        self.gateway = gateway_instance
+
+    def invoke(self, messages, **kwargs):
+        # Maps LangChain invoke to gateway invoke
+        response = self.gateway.invoke(messages, **kwargs)
+        from langchain_core.messages import AIMessage
+        return AIMessage(content=response.text)
+
+    def with_structured_output(self, schema, **kwargs):
+        return LangChainStructuredAdapter(self.gateway, schema)
+
+class LangChainStructuredAdapter:
+    def __init__(self, gateway_instance: LLMGateway, schema):
+        self.gateway = gateway_instance
+        self.schema = schema
+
+    def invoke(self, messages, **kwargs):
+        # Maps LangChain structured invoke to gateway structured invoke
+        return self.gateway.invoke_structured(messages, self.schema, **kwargs)
+
+# Export the adapter as the legacy 'llm' instance
+llm = LangChainGatewayAdapter(gateway)
+
 
 
 

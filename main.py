@@ -136,8 +136,33 @@ def main():
         for i, scenario in enumerate(TEST_SCENARIOS):
             print(f"\n[RUNNING TEST CASE {i + 1}] {scenario['name']}")
             run_agentic_triage(scenario["request"])
+            
+        # Display gateway metrics report
+        from config import gateway
+        print("\n" + "=" * 25 + " LLM GATEWAY TELEMETRY REPORT " + "=" * 25)
+        print(f"{'Timestamp':<19} | {'Provider':<8} | {'Model':<25} | {'Latency':<7} | {'Tokens':<7} | {'Cost':<9} | {'Cache'}")
+        print("-" * 95)
+        total_cost = 0.0
+        total_requests = len(gateway.telemetry_logs)
+        cache_hits = 0
+        
+        for record in gateway.telemetry_logs:
+            tokens_str = f"{record['input_tokens']}/{record['output_tokens']}"
+            cost_str = f"${record['estimated_cost']:.6f}"
+            latency_str = f"{record['latency']:.2f}s"
+            cached_str = "HIT" if record["cache_hit"] else "MISS"
+            print(f"{record['timestamp'][:19]:<19} | {record['provider']:<8} | {record['model'][:25]:<25} | {latency_str:<7} | {tokens_str:<7} | {cost_str:<9} | {cached_str}")
+            total_cost += record["estimated_cost"]
+            if record["cache_hit"]:
+                cache_hits += 1
+                
+        print("-" * 95)
+        print(f"Total Invocations: {total_requests} | Cache Hits: {cache_hits} ({cache_hits/total_requests*100:.1f}%) | Total Cost: ${total_cost:.6f}")
+        print("=" * 80)
+        
         print("\nAll verification scenarios complete.")
         return
+
         
     # Interactive CLI Mode
     print("Type '--test' to run automated scenarios, or interact directly below.")
