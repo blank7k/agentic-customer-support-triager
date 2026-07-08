@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from uuid import UUID
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Optional, Dict, Any
 
 class TicketCreate(BaseModel):
     conversation_id: UUID
@@ -15,3 +15,5 @@ class TicketResponse(BaseModel):
     status: Literal["open", "in_progress", "closed"]
     category: Literal["billing", "shipping", "refund", "general"]
     created_at: datetime
+    graph_state: Optional[Dict[str, Any]] = None
+
