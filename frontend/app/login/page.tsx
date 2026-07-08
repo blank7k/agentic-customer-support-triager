@@ -42,8 +42,14 @@ export default function LoginPage() {
       return;
     }
 
-    // Auth state listener handles redirection on mount, but check role for instant jump
-    const userRole = data.user?.user_metadata?.role || "customer";
+    // Fetch role from profiles table directly
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", data.user?.id)
+      .single();
+
+    const userRole = profile?.role || "customer";
     if (userRole === "manager") {
       router.push("/manager/dashboard");
     } else {

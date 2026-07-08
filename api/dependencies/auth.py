@@ -23,18 +23,24 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     user_id = payload.get("sub")
     email = payload.get("email")
     
-    # Supabase JWT stores custom user attributes (like role) in metadata claims
-    user_metadata = payload.get("user_metadata", {}) or {}
-    app_metadata = payload.get("app_metadata", {}) or {}
-    
-    # Extract role from metadata, defaulting to 'customer'
-    role = user_metadata.get("role") or app_metadata.get("role") or "customer"
-    
     if not user_id or not email:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token payload is missing subject or email parameters",
         )
+
+    # Fetch role from profiles table to ensure DB-level role consistency
+    try:
+        from api.database.client import get_supabase_admin_client
+        admin_client = get_supabase_admin_client()
+        profile_res = admin_client.table("profiles").select("role").eq("id", user_id).execute()
+        if profile_res.data:
+            role = profile_res.data[0]["role"]
+        else:
+            role = "customer"
+    except Exception as e:
+        print(f"Error querying profiles table for role in API: {e}")
+        role = "customer"
         
     return UserOut(
         id=UUID(user_id),

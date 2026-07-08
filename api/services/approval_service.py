@@ -2,7 +2,7 @@ from uuid import UUID
 from datetime import datetime
 from typing import List, Dict, Any
 from fastapi import HTTPException
-from api.database.client import get_supabase_client
+from api.database.client import get_supabase_client, get_supabase_admin_client
 from api.services.graph_service import GraphService
 
 class ApprovalService:
@@ -23,6 +23,7 @@ class ApprovalService:
         resumes the workflow run, and commits the output back to database logs.
         """
         supabase = get_supabase_client(jwt_token)
+        admin_supabase = get_supabase_admin_client()
         
         # 1. Update database approval log
         decided_at = datetime.utcnow().isoformat()
@@ -41,16 +42,16 @@ class ApprovalService:
         # 3. Resume Graph execution
         res = GraphService.run_workflow(str(thread_id), None)
         
-        # 4. Commit final response to PostgreSQL
+        # 4. Commit final response to PostgreSQL (Bypassing RLS via admin client)
         final_text = res.get("final_response", "")
         
         # Update conversation status to completed
-        supabase.table("conversations").update({
+        admin_supabase.table("conversations").update({
             "status": "completed"
         }).eq("id", str(thread_id)).execute()
         
         # Save resolution response to messages history
-        supabase.table("messages").insert({
+        admin_supabase.table("messages").insert({
             "conversation_id": str(thread_id),
             "sender": "agent",
             "content": final_text
@@ -60,3 +61,4 @@ class ApprovalService:
             "status": "completed",
             "final_response": final_text
         }
+

@@ -41,3 +41,28 @@ def submit_decision(
         )
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+@router.get("/{thread_id}/state", response_model=Dict[str, Any])
+def get_thread_state(
+    thread_id: UUID,
+    current_user: UserOut = Depends(require_manager),
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """
+    Retrieves the raw LangGraph checkpointer state values for a given thread.
+    Restricted to managers.
+    """
+    from api.services.graph_service import GraphService
+    state = GraphService.get_thread_state(str(thread_id))
+    if not state or not state.values:
+        raise HTTPException(status_code=404, detail="Thread state not found or empty")
+    return {
+        "tasks": state.values.get("tasks", []),
+        "results": state.values.get("results", []),
+        "current_task_index": state.values.get("current_task_index", 0),
+        "approval_required": state.values.get("approval_required", False),
+        "approval_status": state.values.get("approval_status", "pending"),
+        "approval_reason": state.values.get("approval_reason", None),
+        "final_response": state.values.get("final_response", "")
+    }
+

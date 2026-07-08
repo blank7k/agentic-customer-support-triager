@@ -23,24 +23,60 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const router = useRouter();
 
   useEffect(() => {
-    // Check initial active session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        const metadataRole = session.user.user_metadata?.role || "customer";
-        setRole(metadataRole);
+    const fetchUserRole = async (userId: string) => {
+      try {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", userId)
+          .single();
+        if (data) {
+          return data.role as "customer" | "manager";
+        }
+      } catch (err) {
+        console.error("Error fetching user role profile:", err);
       }
-      setIsLoading(false);
+      return "customer";
+    };
+
+    // Check initial active session
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session) {
+        setSession(session);
+        setUser(session.user);
+        const resolvedRole = await fetchUserRole(session.user.id);
+        setRole(resolvedRole);
+        setIsLoading(false);
+      } else {
+        // No session exists. Determine path context
+        const path = typeof window !== "undefined" ? window.location.pathname : "";
+        const isManagerPath = path.startsWith("/manager");
+        const isAuthPath = ["/login", "/register"].includes(path);
+
+        if (!isManagerPath && !isAuthPath) {
+          console.log("Guest customer direct access: Logging in guest account...");
+          supabase.auth.signInWithPassword({
+            email: "customer_guest@triager.io",
+            password: "GuestPassword123!"
+          }).then(({ data, error }) => {
+            if (error) {
+              console.error("Auto guest login failed:", error);
+              setIsLoading(false);
+            }
+          });
+        } else {
+          setIsLoading(false);
+        }
+      }
     });
 
     // Listen to session updates
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        const metadataRole = session.user.user_metadata?.role || "customer";
-        setRole(metadataRole);
+        const resolvedRole = await fetchUserRole(session.user.id);
+        setRole(resolvedRole);
       } else {
         setRole(null);
       }

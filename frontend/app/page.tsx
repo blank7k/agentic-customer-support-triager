@@ -18,7 +18,7 @@ export default function IndexPage() {
           router.push("/dashboard");
         }
       } else {
-        router.push("/login");
+        router.push("/dashboard");
       }
     }
   }, [user, role, isLoading, router]);
