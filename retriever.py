@@ -2,6 +2,7 @@ import os
 import re
 from typing import Dict
 from config import llm
+from llm_gateway import TaskType
 
 PREVIEW_SUMMARIES: Dict[str, str] = {
     "1. General Return Conditions & Smartphone Policy": "Include the general 1-12 policy rules, international export limitations, technician visits, and the 48-hour damage reporting window rule for mobiles.",
@@ -68,7 +69,7 @@ class VectorlessRetriever:
             response = llm.invoke([
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message}
-            ])
+            ], task_type=TaskType.RETRIEVAL)
             response_text = response.content.strip()
         except Exception as e:
             print(f"Error calling LLM in retriever: {e}")

@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-from llm_gateway import LLMGateway
+from llm_gateway import LLMGateway, TaskType
 
 # Load .env file
 dotenv_path = os.path.join(os.path.dirname(__file__), ".env")
@@ -16,41 +16,60 @@ if os.getenv("TAVILY_API_KEY"):
 if os.getenv("OPENAI_API_KEY"):
     os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
 
-# 1. Define priorities and provider configurations
-PROVIDERS_CONFIG = [
-    {"name": "groq", "model": "groq/llama-3.3-70b-versatile"},
-    {"name": "gemini", "model": "gemini/gemini-3.1-flash-lite"},
-    {"name": "openai", "model": "openai/gpt-4o-mini"}
-]
+# Centralized capability routing priorities config (no structured_output category)
+TASK_ROUTING = {
+    TaskType.PLANNING: [
+        {"name": "gemini", "model": "gemini/gemini-3.1-flash-lite"},
+        {"name": "groq", "model": "groq/llama-3.3-70b-versatile"},
+        {"name": "openai", "model": "openai/gpt-4o-mini"}
+    ],
+    TaskType.FAST_RESPONSE: [
+        {"name": "groq", "model": "groq/llama-3.3-70b-versatile"},
+        {"name": "gemini", "model": "gemini/gemini-3.1-flash-lite"},
+        {"name": "openai", "model": "openai/gpt-4o-mini"}
+    ],
+    TaskType.RETRIEVAL: [
+        {"name": "gemini", "model": "gemini/gemini-3.1-flash-lite"},
+        {"name": "groq", "model": "groq/llama-3.3-70b-versatile"},
+        {"name": "openai", "model": "openai/gpt-4o-mini"}
+    ],
+    TaskType.REASONING: [
+        {"name": "openai", "model": "openai/gpt-4o-mini"},
+        {"name": "gemini", "model": "gemini/gemini-3.1-flash-lite"},
+        {"name": "groq", "model": "groq/llama-3.3-70b-versatile"}
+    ]
+}
 
-# 2. Instantiate explicit LLMGateway
-gateway = LLMGateway(PROVIDERS_CONFIG, enable_cache=True)
+# Instantiate explicit LLMGateway
+gateway = LLMGateway(TASK_ROUTING, enable_cache=True)
 
-# 3. Create LangChain Adapter Classes to maintain zero code change in nodes
+# Create LangChain Adapter Classes carrying task_type explicitly
 class LangChainGatewayAdapter:
     def __init__(self, gateway_instance: LLMGateway):
         self.gateway = gateway_instance
 
-    def invoke(self, messages, **kwargs):
-        # Maps LangChain invoke to gateway invoke
-        response = self.gateway.invoke(messages, **kwargs)
+    def invoke(self, messages, task_type: TaskType = None, **kwargs):
+        response = self.gateway.invoke(messages, task_type=task_type, **kwargs)
         from langchain_core.messages import AIMessage
         return AIMessage(content=response.text)
 
-    def with_structured_output(self, schema, **kwargs):
-        return LangChainStructuredAdapter(self.gateway, schema)
+    def with_structured_output(self, schema, task_type: TaskType = None, **kwargs):
+        # Allow specifying a custom task type (e.g. TaskType.PLANNING)
+        return LangChainStructuredAdapter(self.gateway, schema, task_type=task_type)
 
 class LangChainStructuredAdapter:
-    def __init__(self, gateway_instance: LLMGateway, schema):
+    def __init__(self, gateway_instance: LLMGateway, schema, task_type: TaskType = None):
         self.gateway = gateway_instance
         self.schema = schema
+        self.task_type = task_type
 
     def invoke(self, messages, **kwargs):
-        # Maps LangChain structured invoke to gateway structured invoke
-        return self.gateway.invoke_structured(messages, self.schema, **kwargs)
+        # Passes the explicit task_type to gateway structured invoke
+        return self.gateway.invoke_structured(messages, self.schema, task_type=self.task_type, **kwargs)
 
 # Export the adapter as the legacy 'llm' instance
 llm = LangChainGatewayAdapter(gateway)
+
 
 
 

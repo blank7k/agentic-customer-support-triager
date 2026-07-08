@@ -4,8 +4,15 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Dict, Any, Type
+from enum import Enum
 import litellm
 from litellm.caching import Cache
+
+class TaskType(str, Enum):
+    PLANNING = "planning"
+    FAST_RESPONSE = "fast_response"
+    RETRIEVAL = "retrieval"
+    REASONING = "reasoning"
 
 @dataclass
 class LLMResponse:
@@ -19,8 +26,8 @@ class LLMResponse:
     cache_hit: bool
 
 class LLMGateway:
-    def __init__(self, providers_config: List[Dict[str, Any]], enable_cache: bool = True):
-        self.providers = providers_config
+    def __init__(self, providers_routing: Dict[TaskType, List[Dict[str, Any]]], enable_cache: bool = True):
+        self.providers = providers_routing
         self.telemetry_logs: List[Dict[str, Any]] = []
         
         # Configure LiteLLM global cache native delegation
@@ -52,18 +59,25 @@ class LLMGateway:
                 normalized.append({"role": "user", "content": str(msg)})
         return normalized
 
-    def invoke(self, messages: Any, **kwargs) -> LLMResponse:
+    def invoke(self, messages: Any, task_type: TaskType = None, **kwargs) -> LLMResponse:
         """Executes a text completion query with dynamic failover retry and telemetry logging."""
         normalized_messages = self._normalize_messages(messages)
         start_time = time.perf_counter()
         
+        # Resolve provider models list based on task capability
+        providers_list = None
+        if task_type and task_type in self.providers:
+            providers_list = self.providers[task_type]
+        else:
+            # Safe default fallback to first available chain list
+            providers_list = list(self.providers.values())[0]
+            
         # 1. Attempt cache lookup using LiteLLM Cache Key generator
         cache_key = None
         cached_response = None
         if litellm.cache and litellm.cache.cache:
             try:
-                # Cache lookup is generated against the primary model
-                primary_model = self.providers[0]["model"]
+                primary_model = providers_list[0]["model"]
                 cache_key = litellm.cache.get_cache_key(
                     model=primary_model,
                     messages=normalized_messages,
@@ -81,21 +95,22 @@ class LLMGateway:
             input_tokens = usage.get("prompt_tokens", 0) if usage else 0
             output_tokens = usage.get("completion_tokens", 0) if usage else 0
             
-            model_used = getattr(cached_response, "model", self.providers[0]["model"])
-            provider_name = self.providers[0]["name"]
-            for p in self.providers:
+            model_used = getattr(cached_response, "model", providers_list[0]["model"])
+            provider_name = providers_list[0]["name"]
+            for p in providers_list:
                 if p["model"] == model_used:
                     provider_name = p["name"]
                     break
                     
             record = {
                 "timestamp": datetime.now().isoformat(),
+                "task_type": task_type or TaskType.PLANNING,
                 "provider": provider_name,
                 "model": model_used,
                 "latency": latency,
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
-                "estimated_cost": 0.0,  # Cache hits are free
+                "estimated_cost": 0.0,
                 "cache_hit": True
             }
             self.telemetry_logs.append(record)
@@ -117,7 +132,7 @@ class LLMGateway:
         response = None
         selected_provider = None
         
-        for provider in self.providers:
+        for provider in providers_list:
             selected_provider = provider
             model_name = provider["model"]
             print(f"[LLM Gateway] Attempting execution with model: {model_name}...")
@@ -156,6 +171,7 @@ class LLMGateway:
             
         record = {
             "timestamp": datetime.now().isoformat(),
+            "task_type": task_type or TaskType.PLANNING,
             "provider": selected_provider["name"],
             "model": selected_provider["model"],
             "latency": latency,
@@ -178,17 +194,24 @@ class LLMGateway:
             cache_hit=False
         )
 
-    def invoke_structured(self, messages: Any, schema: Type[Any], **kwargs) -> Any:
+    def invoke_structured(self, messages: Any, schema: Type[Any], task_type: TaskType = None, **kwargs) -> Any:
         """Executes a structured completion query enforcing the output Pydantic schema."""
         normalized_messages = self._normalize_messages(messages)
         start_time = time.perf_counter()
         
+        # Resolve provider models list based on task capability
+        providers_list = None
+        if task_type and task_type in self.providers:
+            providers_list = self.providers[task_type]
+        else:
+            providers_list = list(self.providers.values())[0]
+            
         # 1. Attempt cache lookup using LiteLLM Cache Key generator
         cache_key = None
         cached_response = None
         if litellm.cache and litellm.cache.cache:
             try:
-                primary_model = self.providers[0]["model"]
+                primary_model = providers_list[0]["model"]
                 cache_key = litellm.cache.get_cache_key(
                     model=primary_model,
                     messages=normalized_messages,
@@ -207,15 +230,16 @@ class LLMGateway:
             input_tokens = usage.get("prompt_tokens", 0) if usage else 0
             output_tokens = usage.get("completion_tokens", 0) if usage else 0
             
-            model_used = getattr(cached_response, "model", self.providers[0]["model"])
-            provider_name = self.providers[0]["name"]
-            for p in self.providers:
+            model_used = getattr(cached_response, "model", providers_list[0]["model"])
+            provider_name = providers_list[0]["name"]
+            for p in providers_list:
                 if p["model"] == model_used:
                     provider_name = p["name"]
                     break
                     
             record = {
                 "timestamp": datetime.now().isoformat(),
+                "task_type": task_type or TaskType.PLANNING,
                 "provider": provider_name,
                 "model": model_used,
                 "latency": latency,
@@ -235,7 +259,7 @@ class LLMGateway:
         response = None
         selected_provider = None
         
-        for provider in self.providers:
+        for provider in providers_list:
             selected_provider = provider
             model_name = provider["model"]
             print(f"[LLM Gateway] Attempting structured completion with model: {model_name}...")
@@ -274,6 +298,7 @@ class LLMGateway:
             
         record = {
             "timestamp": datetime.now().isoformat(),
+            "task_type": task_type or TaskType.PLANNING,
             "provider": selected_provider["name"],
             "model": selected_provider["model"],
             "latency": latency,

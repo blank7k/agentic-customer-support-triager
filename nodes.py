@@ -8,6 +8,7 @@ from approval_policy import needs_refund_approval
 retriever = VectorlessRetriever()
 
 from config import llm
+from llm_gateway import TaskType
 from state import AgentState, AgentType, Task, TaskResult
 from prompts import (
     PLANNER_SYSTEM_PROMPT,
@@ -37,7 +38,7 @@ def planner_node(state: AgentState) -> Dict[str, Any]:
     customer_request = state.get("customer_request", "")
     
     # Configure LLM for structured output
-    structured_llm = llm.with_structured_output(RouterPlan)
+    structured_llm = llm.with_structured_output(RouterPlan, task_type=TaskType.PLANNING)
     
     # Call LLM
     try:
@@ -111,7 +112,7 @@ def billing_node(state: AgentState) -> Dict[str, Any]:
         tool_output=str(tool_output)
     )
     
-    response = llm.invoke(prompt)
+    response = llm.invoke(prompt, task_type=TaskType.FAST_RESPONSE)
     
     # Step 3: Write back result
     result: TaskResult = {
@@ -153,7 +154,7 @@ def shipping_node(state: AgentState) -> Dict[str, Any]:
         tool_output=str(tool_output)
     )
     
-    response = llm.invoke(prompt)
+    response = llm.invoke(prompt, task_type=TaskType.FAST_RESPONSE)
     
     # Step 3: Write back result
     result: TaskResult = {
@@ -198,7 +199,7 @@ def refund_node(state: AgentState) -> Dict[str, Any]:
         policy_context=policy_context
     )
     
-    response = llm.invoke(prompt)
+    response = llm.invoke(prompt, task_type=TaskType.REASONING)
     
     # Call approval policy to evaluate escalation triggers
     approval_required, approval_reason = needs_refund_approval(tool_output)
@@ -244,7 +245,7 @@ def response_synthesizer_node(state: AgentState) -> Dict[str, Any]:
         ledger=ledger_text
     )
     
-    response = llm.invoke(prompt)
+    response = llm.invoke(prompt, task_type=TaskType.REASONING)
     
     return {
         "final_response": response.content
