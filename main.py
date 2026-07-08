@@ -22,6 +22,14 @@ TEST_SCENARIOS = [
     {
         "name": "Scenario E: Out of Scope / Greeting",
         "request": "Hello there! Hope you are having a nice day. What are your store hours?"
+    },
+    {
+        "name": "Test Case 6 (Footwear window edge case)",
+        "request": "I bought casual sneakers 12 days ago, but they don't fit well. Can I exchange them for a larger size or get a refund?"
+    },
+    {
+        "name": "Test Case 7 (Damaged Smartphone 48h limit check)",
+        "request": "I opened my package today and found my new smartphone screen is completely shattered. The tracking details show it was delivered 3 days ago. Please send a replacement."
     }
 ]
 

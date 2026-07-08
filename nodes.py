@@ -2,6 +2,10 @@ import re
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any
 
+from retriever import VectorlessRetriever
+
+retriever = VectorlessRetriever()
+
 from config import llm
 from state import AgentState, AgentType, Task, TaskResult
 from prompts import (
@@ -139,7 +143,7 @@ def shipping_node(state: AgentState) -> Dict[str, Any]:
     
     # Step 1: Execute Tool (Mocked)
     tracking_id = extract_id(task["instruction"], "tracking|order|shipment")
-    tool_output = mock_get_tracking_status(tracking_id)
+    tool_output = mock_get_tracking_status(tracking_id, task["instruction"])
     print(f"Tool Executed: mock_get_tracking_status('{tracking_id}') -> Carrier: {tool_output['carrier']}, Status: {tool_output['status']}")
     
     # Step 2: Invoke LLM
@@ -178,13 +182,19 @@ def refund_node(state: AgentState) -> Dict[str, Any]:
     
     # Step 1: Execute Tool (Mocked)
     order_id = extract_id(task["instruction"], "order|refund|item")
-    tool_output = mock_process_refund(order_id)
+    tool_output = mock_process_refund(order_id, task["instruction"])
     print(f"Tool Executed: mock_process_refund('{order_id}') -> Return: {tool_output['return_status']}, Refund: {tool_output['refund_eligibility']}")
     
-    # Step 2: Invoke LLM
+    # Step 2: Retrieve policy context
+    customer_request = state.get("customer_request", "")
+    policy_context = retriever.retrieve_relevant_context(customer_request)
+    print(f"Policy Context Retrieved ({len(policy_context)} characters)")
+    
+    # Step 3: Invoke LLM with policy context
     prompt = REFUND_AGENT_SYSTEM_PROMPT.format(
         instruction=task["instruction"],
-        tool_output=str(tool_output)
+        tool_output=str(tool_output),
+        policy_context=policy_context
     )
     
     response = llm.invoke(prompt)
