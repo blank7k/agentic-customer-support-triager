@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
-import { ThemeToggle } from "./ThemeToggle";
 import { LogOut, Shield, User, Terminal, Menu, X } from "lucide-react";
 import { useState } from "react";
 
@@ -73,7 +72,6 @@ export default function Navbar() {
 
           {/* Right Header Operations */}
           <div className="hidden md:flex items-center space-x-4">
-            <ThemeToggle />
             
             {/* User Profile Tag */}
             <div className="flex items-center space-x-2 text-sm text-zinc-600 dark:text-zinc-400 border-l border-zinc-200 dark:border-zinc-800 pl-4">
@@ -97,7 +95,6 @@ export default function Navbar() {
 
           {/* Mobile menu button */}
           <div className="flex items-center md:hidden space-x-2">
-            <ThemeToggle />
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="inline-flex items-center justify-center p-2 rounded-md text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white focus:outline-none"

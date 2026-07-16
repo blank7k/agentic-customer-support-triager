@@ -1,15 +1,16 @@
-# Python-generated files
-__pycache__/
-*.py[cod]
-build/
-dist/
-wheels/
-*.egg-info
+# Root-level gitignore
+backend/.venv/
+backend/__pycache__/
+frontend/.next/
+frontend/node_modules/
 
-# Virtual environments
-.venv
-
-# Environment variables
+# Environments
 .env
-.env.*
-!.env.example
+backend/.env
+frontend/.env.local
+
+# OS/IDE rules
+.DS_Store
+.vscode/
+.idea/
+*.log
