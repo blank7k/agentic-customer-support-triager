@@ -1,8 +1,8 @@
 # Use official uv image to copy binary
-FROM ghcr.io/astral-sh/uv:latest AS uv_setup
+FROM ghcr.io/astral-sh/uv:0.8.15 AS uv_setup
 
 # Base Python build
-FROM python:3.13-slim
+FROM python:3.14-slim
 
 WORKDIR /app
 
@@ -18,7 +18,7 @@ COPY --from=uv_setup /uv /uvx /bin/
 COPY pyproject.toml uv.lock ./
 
 # Install python dependencies ignoring strict python version constraint if base is 3.13
-RUN uv pip install --system --ignore-requires-python -r pyproject.toml
+RUN uv pip install --system -r pyproject.toml
 
 # Copy project files
 COPY . .
